@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <bitset>
 #include <memory>
+#include <stdio.h>
 
 #include <math.h>
 
@@ -116,6 +117,12 @@ struct Compiler
 {
     struct RegScope;
 
+    // Counters for MOVE+CALL optimization analysis
+    mutable size_t totalCalls = 0;
+    mutable size_t moveBeforeCall = 0;
+    mutable size_t localFuncCalls = 0;
+    mutable size_t optimizableLocalFunc = 0;
+
     Compiler(BytecodeBuilder& bytecode, const CompileOptions& options, AstNameTable& names)
         : bytecode(bytecode)
         , options(options)
@@ -137,6 +144,23 @@ struct Compiler
         // preallocate some buffers that are very likely to grow anyway; this works around std::vector's inefficient growth policy for small arrays
         localStack.reserve(16);
         upvals.reserve(16);
+    }
+
+    ~Compiler()
+    {
+        if (totalCalls > 0)
+        {
+            fprintf(
+                stderr,
+                "[Compiler] Total CALLs: %zu, MOVE before CALL: %zu (%.1f%%), local func: %zu, optimizable: %zu (%.1f%% of local)\n",
+                totalCalls,
+                moveBeforeCall,
+                100.0 * moveBeforeCall / totalCalls,
+                localFuncCalls,
+                optimizableLocalFunc,
+                localFuncCalls > 0 ? 100.0 * optimizableLocalFunc / localFuncCalls : 0.0
+            );
+        }
     }
 
     int getLocalReg(AstLocal* local)
@@ -1143,6 +1167,31 @@ struct Compiler
         }
         else if (bfid < 0)
         {
+            // Track MOVE+CALL optimization opportunities
+            totalCalls++;
+
+            // Check if function is a local variable
+            if (AstExprLocal* localFunc = expr->func->as<AstExprLocal>())
+            {
+                localFuncCalls++;
+                if (int localReg = getExprLocalReg(localFunc); localReg >= 0)
+                {
+                    // Check if we could potentially use the local's register
+                    // Requirements: localReg + regCount <= 256 (register limit)
+                    if (localReg + regCount <= 256)
+                    {
+                        // Check if the local's register conflicts with argument registers
+                        // For now, assume no conflicts (conservative estimate)
+                        optimizableLocalFunc++;
+
+                        if (uint8_t(localReg) != regs)
+                        {
+                            moveBeforeCall++;
+                        }
+                    }
+                }
+            }
+
             compileExprTempTop(expr->func, regs);
         }
 
