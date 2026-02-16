@@ -192,6 +192,14 @@ inline bool luau_skipstep(uint8_t op)
     return op == LOP_PREPVARARGS || op == LOP_BREAK;
 }
 
+template<TMS tm>
+LUAU_NOINLINE static StkId luau_executeDoarithSlow(lua_State* L, const Instruction* pc, StkId ra, const TValue* rb, const TValue* rc)
+{
+    L->ci->savedpc = pc;
+    luaV_doarithimpl<tm>(L, ra, rb, rc);
+    return L->base;
+}
+
 template<bool SingleStep>
 static void luau_execute(lua_State* L)
 {
@@ -202,9 +210,9 @@ static void luau_execute(lua_State* L)
     // the critical interpreter state, stored in locals for performance
     // the hope is that these map to registers without spilling (which is not true for x86 :/)
     Closure* cl;
-    StkId base;
-    TValue* k;
-    const Instruction* pc;
+    StkId LUAU_RESTRICT base;
+    TValue* LUAU_RESTRICT k;
+    const Instruction* LUAU_RESTRICT pc;
 
     LUAU_ASSERT(isLua(L->ci));
     LUAU_ASSERT(L->isactive);
@@ -423,7 +431,7 @@ reentry:
                 TValue* kv = VM_KV(LUAU_INSN_D(insn));
 
                 // fast-path: import resolution was successful and closure environment is "safe" for import
-                if (!ttisnil(kv) && cl->env->safeenv)
+                if (LUAU_LIKELY(!ttisnil(kv) && cl->env->safeenv))
                 {
                     setobj2s(L, ra, kv);
                     pc++; // skip over AUX
@@ -1488,7 +1496,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_ADD>(L, ra, rb, rc));
+                        base = luau_executeDoarithSlow<TM_ADD>(L, pc, ra, rb, rc);
                         VM_NEXT();
                     }
                 }
@@ -1534,7 +1542,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_SUB>(L, ra, rb, rc));
+                        base = luau_executeDoarithSlow<TM_SUB>(L, pc, ra, rb, rc);
                         VM_NEXT();
                     }
                 }
@@ -1595,7 +1603,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_MUL>(L, ra, rb, rc));
+                        base = luau_executeDoarithSlow<TM_MUL>(L, pc, ra, rb, rc);
                         VM_NEXT();
                     }
                 }
@@ -1656,7 +1664,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_DIV>(L, ra, rb, rc));
+                        base = luau_executeDoarithSlow<TM_DIV>(L, pc, ra, rb, rc);
                         VM_NEXT();
                     }
                 }
@@ -1709,7 +1717,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_IDIV>(L, ra, rb, rc));
+                        base = luau_executeDoarithSlow<TM_IDIV>(L, pc, ra, rb, rc);
                         VM_NEXT();
                     }
                 }
@@ -1723,7 +1731,7 @@ reentry:
                 StkId rc = VM_REG(LUAU_INSN_C(insn));
 
                 // fast-path
-                if (ttisnumber(rb) && ttisnumber(rc))
+                if (LUAU_LIKELY(ttisnumber(rb) && ttisnumber(rc)))
                 {
                     double nb = nvalue(rb);
                     double nc = nvalue(rc);
@@ -1733,7 +1741,7 @@ reentry:
                 else
                 {
                     // slow-path, may invoke C/Lua via metamethods
-                    VM_PROTECT(luaV_doarithimpl<TM_MOD>(L, ra, rb, rc));
+                    base = luau_executeDoarithSlow<TM_MOD>(L, pc, ra, rb, rc);
                     VM_NEXT();
                 }
             }
@@ -1746,7 +1754,7 @@ reentry:
                 StkId rc = VM_REG(LUAU_INSN_C(insn));
 
                 // fast-path
-                if (ttisnumber(rb) && ttisnumber(rc))
+                if (LUAU_LIKELY(ttisnumber(rb) && ttisnumber(rc)))
                 {
                     setnvalue(ra, pow(nvalue(rb), nvalue(rc)));
                     VM_NEXT();
@@ -1754,7 +1762,7 @@ reentry:
                 else
                 {
                     // slow-path, may invoke C/Lua via metamethods
-                    VM_PROTECT(luaV_doarithimpl<TM_POW>(L, ra, rb, rc));
+                    base = luau_executeDoarithSlow<TM_POW>(L, pc, ra, rb, rc);
                     VM_NEXT();
                 }
             }
@@ -1767,7 +1775,7 @@ reentry:
                 TValue* kv = VM_KV(LUAU_INSN_C(insn));
 
                 // fast-path
-                if (ttisnumber(rb))
+                if (LUAU_LIKELY(ttisnumber(rb)))
                 {
                     setnvalue(ra, nvalue(rb) + nvalue(kv));
                     VM_NEXT();
@@ -1775,7 +1783,7 @@ reentry:
                 else
                 {
                     // slow-path, may invoke C/Lua via metamethods
-                    VM_PROTECT(luaV_doarithimpl<TM_ADD>(L, ra, rb, kv));
+                    base = luau_executeDoarithSlow<TM_ADD>(L, pc, ra, rb, kv);
                     VM_NEXT();
                 }
             }
@@ -1788,7 +1796,7 @@ reentry:
                 TValue* kv = VM_KV(LUAU_INSN_C(insn));
 
                 // fast-path
-                if (ttisnumber(rb))
+                if (LUAU_LIKELY(ttisnumber(rb)))
                 {
                     setnvalue(ra, nvalue(rb) - nvalue(kv));
                     VM_NEXT();
@@ -1796,7 +1804,7 @@ reentry:
                 else
                 {
                     // slow-path, may invoke C/Lua via metamethods
-                    VM_PROTECT(luaV_doarithimpl<TM_SUB>(L, ra, rb, kv));
+                    base = luau_executeDoarithSlow<TM_SUB>(L, pc, ra, rb, kv);
                     VM_NEXT();
                 }
             }
@@ -1841,7 +1849,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_MUL>(L, ra, rb, kv));
+                        base = luau_executeDoarithSlow<TM_MUL>(L, pc, ra, rb, kv);
                         VM_NEXT();
                     }
                 }
@@ -1887,7 +1895,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_DIV>(L, ra, rb, kv));
+                        base = luau_executeDoarithSlow<TM_DIV>(L, pc, ra, rb, kv);
                         VM_NEXT();
                     }
                 }
@@ -1939,7 +1947,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_IDIV>(L, ra, rb, kv));
+                        base = luau_executeDoarithSlow<TM_IDIV>(L, pc, ra, rb, kv);
                         VM_NEXT();
                     }
                 }
@@ -1953,7 +1961,7 @@ reentry:
                 TValue* kv = VM_KV(LUAU_INSN_C(insn));
 
                 // fast-path
-                if (ttisnumber(rb))
+                if (LUAU_LIKELY(ttisnumber(rb)))
                 {
                     double nb = nvalue(rb);
                     double nk = nvalue(kv);
@@ -1963,7 +1971,7 @@ reentry:
                 else
                 {
                     // slow-path, may invoke C/Lua via metamethods
-                    VM_PROTECT(luaV_doarithimpl<TM_MOD>(L, ra, rb, kv));
+                    base = luau_executeDoarithSlow<TM_MOD>(L, pc, ra, rb, kv);
                     VM_NEXT();
                 }
             }
@@ -1976,7 +1984,7 @@ reentry:
                 TValue* kv = VM_KV(LUAU_INSN_C(insn));
 
                 // fast-path
-                if (ttisnumber(rb))
+                if (LUAU_LIKELY(ttisnumber(rb)))
                 {
                     double nb = nvalue(rb);
                     double nk = nvalue(kv);
@@ -1990,7 +1998,7 @@ reentry:
                 else
                 {
                     // slow-path, may invoke C/Lua via metamethods
-                    VM_PROTECT(luaV_doarithimpl<TM_POW>(L, ra, rb, kv));
+                    base = luau_executeDoarithSlow<TM_POW>(L, pc, ra, rb, kv);
                     VM_NEXT();
                 }
             }
@@ -2103,7 +2111,7 @@ reentry:
                     else
                     {
                         // slow-path, may invoke C/Lua via metamethods
-                        VM_PROTECT(luaV_doarithimpl<TM_UNM>(L, ra, rb, rb));
+                        base = luau_executeDoarithSlow<TM_UNM>(L, pc, ra, rb, rb);
                         VM_NEXT();
                     }
                 }
@@ -2653,7 +2661,7 @@ reentry:
                 luau_FastFunction f = luauF_table[bfid];
                 LUAU_ASSERT(f);
 
-                if (cl->env->safeenv)
+                if (LUAU_LIKELY(cl->env->safeenv))
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
@@ -2708,7 +2716,7 @@ reentry:
                 StkId rc = VM_REG(LUAU_INSN_C(insn));
 
                 // fast-path
-                if (ttisnumber(rc))
+                if (LUAU_LIKELY(ttisnumber(rc)))
                 {
                     setnvalue(ra, nvalue(kv) - nvalue(rc));
                     VM_NEXT();
@@ -2716,7 +2724,7 @@ reentry:
                 else
                 {
                     // slow-path, may invoke C/Lua via metamethods
-                    VM_PROTECT(luaV_doarithimpl<TM_SUB>(L, ra, kv, rc));
+                    base = luau_executeDoarithSlow<TM_SUB>(L, pc, ra, kv, rc);
                     VM_NEXT();
                 }
             }
@@ -2744,7 +2752,7 @@ reentry:
                 else
                 {
                     // slow-path, may invoke C/Lua via metamethods
-                    VM_PROTECT(luaV_doarithimpl<TM_DIV>(L, ra, kv, rc));
+                    base = luau_executeDoarithSlow<TM_DIV>(L, pc, ra, kv, rc);
                     VM_NEXT();
                 }
             }
@@ -2769,7 +2777,7 @@ reentry:
                 luau_FastFunction f = luauF_table[bfid];
                 LUAU_ASSERT(f);
 
-                if (cl->env->safeenv)
+                if (LUAU_LIKELY(cl->env->safeenv))
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
@@ -2819,7 +2827,7 @@ reentry:
                 luau_FastFunction f = luauF_table[bfid];
                 LUAU_ASSERT(f);
 
-                if (cl->env->safeenv)
+                if (LUAU_LIKELY(cl->env->safeenv))
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
@@ -2869,7 +2877,7 @@ reentry:
                 luau_FastFunction f = luauF_table[bfid];
                 LUAU_ASSERT(f);
 
-                if (cl->env->safeenv)
+                if (LUAU_LIKELY(cl->env->safeenv))
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
@@ -2920,7 +2928,7 @@ reentry:
                 luau_FastFunction f = luauF_table[bfid];
                 LUAU_ASSERT(f);
 
-                if (cl->env->safeenv)
+                if (LUAU_LIKELY(cl->env->safeenv))
                 {
                     VM_PROTECT_PC(); // f may fail due to OOM
 
