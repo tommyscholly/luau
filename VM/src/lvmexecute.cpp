@@ -136,18 +136,8 @@
 
 LUAU_FASTFLAGVARIABLE(LuauVmQuickeningGetTableKs)
 LUAU_FASTFLAGVARIABLE(LuauVmQuickeningSetTableKs)
-LUAU_FASTFLAGVARIABLE(LuauVmQuickeningStats)
 LUAU_FASTINTVARIABLE(LuauVmQuickeningGetTableKsThreshold, 32)
 LUAU_FASTINTVARIABLE(LuauVmQuickeningSetTableKsThreshold, 32)
-
-static uint64_t vmQuickeningGetTableKsQuickenedCounter = 0;
-static uint64_t vmQuickeningGetTableKsHitCounter = 0;
-static uint64_t vmQuickeningGetTableKsMissCounter = 0;
-static uint64_t vmQuickeningGetTableKsDequickenedCounter = 0;
-static uint64_t vmQuickeningSetTableKsQuickenedCounter = 0;
-static uint64_t vmQuickeningSetTableKsHitCounter = 0;
-static uint64_t vmQuickeningSetTableKsMissCounter = 0;
-static uint64_t vmQuickeningSetTableKsDequickenedCounter = 0;
 
 LUAU_NOINLINE void luau_callhook(lua_State* L, lua_Hook hook, void* userdata)
 {
@@ -514,9 +504,6 @@ reentry:
                             if (shouldQuicken)
                             {
                                 VM_PATCH_OP(insnpc, LOP_GETTABLEKS_Q);
-
-                                if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningStats))
-                                    vmQuickeningGetTableKsQuickenedCounter++;
                             }
                         }
 
@@ -635,17 +622,8 @@ reentry:
                     {
                         setobj2s(L, ra, gval(n));
 
-                        if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningStats))
-                            vmQuickeningGetTableKsHitCounter++;
-
                         VM_NEXT();
                     }
-                }
-
-                if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningStats))
-                {
-                    vmQuickeningGetTableKsMissCounter++;
-                    vmQuickeningGetTableKsDequickenedCounter++;
                 }
 
                 // If guarded assumptions fail, dequicken and re-dispatch through the generic implementation.
@@ -707,9 +685,6 @@ reentry:
                             if (shouldQuicken)
                             {
                                 VM_PATCH_OP(insnpc, LOP_SETTABLEKS_Q);
-
-                                if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningStats))
-                                    vmQuickeningSetTableKsQuickenedCounter++;
                             }
                         }
 
@@ -787,17 +762,8 @@ reentry:
                         setobj2t(L, gval(n), ra);
                         luaC_barriert(L, h, ra);
 
-                        if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningStats))
-                            vmQuickeningSetTableKsHitCounter++;
-
                         VM_NEXT();
                     }
-                }
-
-                if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningStats))
-                {
-                    vmQuickeningSetTableKsMissCounter++;
-                    vmQuickeningSetTableKsDequickenedCounter++;
                 }
 
                 // If guarded assumptions fail, dequicken and re-dispatch through the generic implementation.
