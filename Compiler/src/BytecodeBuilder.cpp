@@ -1339,7 +1339,9 @@ void BytecodeBuilder::validateInstructions() const
             break;
 
         case LOP_GETGLOBAL:
+        case LOP_GETGLOBAL_Q:
         case LOP_SETGLOBAL:
+        case LOP_SETGLOBAL_Q:
             VREG(LUAU_INSN_A(insn));
             VCONST(insns[i + 1], String);
             break;
@@ -1384,7 +1386,9 @@ void BytecodeBuilder::validateInstructions() const
             break;
 
         case LOP_GETTABLEN:
+        case LOP_GETTABLEN_Q:
         case LOP_SETTABLEN:
+        case LOP_SETTABLEN_Q:
             VREG(LUAU_INSN_A(insn));
             VREG(LUAU_INSN_B(insn));
             break;
@@ -1797,6 +1801,7 @@ void BytecodeBuilder::validateVariadic() const
             // (we can't simply start a variadic sequence here because that would trigger assertions during linked CALL validation)
         }
         else if (op == LOP_CLOSEUPVALS || op == LOP_NAMECALL || op == LOP_GETIMPORT || op == LOP_MOVE || op == LOP_GETUPVAL || op == LOP_GETGLOBAL ||
+                 op == LOP_GETGLOBAL_Q ||
                  op == LOP_GETTABLEKS || op == LOP_GETTABLEKS_Q || op == LOP_SETTABLEKS_Q || op == LOP_COVERAGE)
         {
             // instructions inside a variadic sequence must be neutral (can't change L->top)
@@ -1965,8 +1970,22 @@ void BytecodeBuilder::dumpInstruction(const uint32_t* code, std::string& result,
         code++;
         break;
 
+    case LOP_GETGLOBAL_Q:
+        formatAppend(result, "GETGLOBAL_Q R%d K%d [", LUAU_INSN_A(insn), *code);
+        dumpConstant(result, *code);
+        result.append("]\n");
+        code++;
+        break;
+
     case LOP_SETGLOBAL:
         formatAppend(result, "SETGLOBAL R%d K%d [", LUAU_INSN_A(insn), *code);
+        dumpConstant(result, *code);
+        result.append("]\n");
+        code++;
+        break;
+
+    case LOP_SETGLOBAL_Q:
+        formatAppend(result, "SETGLOBAL_Q R%d K%d [", LUAU_INSN_A(insn), *code);
         dumpConstant(result, *code);
         result.append("]\n");
         code++;
@@ -2031,8 +2050,16 @@ void BytecodeBuilder::dumpInstruction(const uint32_t* code, std::string& result,
         formatAppend(result, "GETTABLEN R%d R%d %d\n", LUAU_INSN_A(insn), LUAU_INSN_B(insn), LUAU_INSN_C(insn) + 1);
         break;
 
+    case LOP_GETTABLEN_Q:
+        formatAppend(result, "GETTABLEN_Q R%d R%d %d\n", LUAU_INSN_A(insn), LUAU_INSN_B(insn), LUAU_INSN_C(insn) + 1);
+        break;
+
     case LOP_SETTABLEN:
         formatAppend(result, "SETTABLEN R%d R%d %d\n", LUAU_INSN_A(insn), LUAU_INSN_B(insn), LUAU_INSN_C(insn) + 1);
+        break;
+
+    case LOP_SETTABLEN_Q:
+        formatAppend(result, "SETTABLEN_Q R%d R%d %d\n", LUAU_INSN_A(insn), LUAU_INSN_B(insn), LUAU_INSN_C(insn) + 1);
         break;
 
     case LOP_NEWCLOSURE:

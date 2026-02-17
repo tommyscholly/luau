@@ -798,4 +798,124 @@ do
   assert(observed == 42)
 end
 
+-- quickening stress for GETTABLEN: stable array reads, then force fallback through __index
+do
+  local t = { 1 }
+
+  for i = 1, 128 do
+    assert(t[1] == 1)
+  end
+
+  setmetatable(t, {
+    __index = function(_, k)
+      if k == 1 then
+        return 2
+      end
+      return nil
+    end,
+  })
+
+  t[1] = nil
+
+  for i = 1, 32 do
+    assert(t[1] == 2)
+  end
+end
+
+-- quickening stress for SETTABLEN: stable array writes, then force fallback through __newindex
+do
+  local t = { 0 }
+
+  for i = 1, 128 do
+    t[1] = i
+    assert(t[1] == i)
+  end
+
+  t[1] = nil
+
+  local observed = 0
+  setmetatable(t, {
+    __newindex = function(_, k, v)
+      if k == 1 then
+        observed = v
+      end
+    end,
+  })
+
+  t[1] = 42
+  assert(t[1] == nil)
+  assert(observed == 42)
+end
+
+-- quickening stress for GETGLOBAL: stable global reads, then force fallback through _G.__index
+do
+  local oldmt = getmetatable(_G)
+  _G.__quickening_global_get = 1
+
+  for i = 1, 128 do
+    assert(__quickening_global_get == 1)
+  end
+
+  setmetatable(_G, {
+    __index = function(_, k)
+      if k == "__quickening_global_get" then
+        return 2
+      end
+      if oldmt and type(oldmt.__index) == "function" then
+        return oldmt.__index(_, k)
+      end
+      if oldmt and type(oldmt.__index) == "table" then
+        return oldmt.__index[k]
+      end
+      return nil
+    end,
+    __newindex = oldmt and oldmt.__newindex or nil,
+  })
+
+  _G.__quickening_global_get = nil
+
+  for i = 1, 32 do
+    assert(__quickening_global_get == 2)
+  end
+
+  setmetatable(_G, oldmt)
+  _G.__quickening_global_get = nil
+end
+
+-- quickening stress for SETGLOBAL: stable global writes, then force fallback through _G.__newindex
+do
+  local oldmt = getmetatable(_G)
+  _G.__quickening_global_set = 0
+
+  for i = 1, 128 do
+    __quickening_global_set = i
+    assert(__quickening_global_set == i)
+  end
+
+  _G.__quickening_global_set = nil
+
+  local observed = 0
+  setmetatable(_G, {
+    __index = oldmt and oldmt.__index or nil,
+    __newindex = function(_, k, v)
+      if k == "__quickening_global_set" then
+        observed = v
+      elseif oldmt and type(oldmt.__newindex) == "function" then
+        oldmt.__newindex(_, k, v)
+      elseif oldmt and type(oldmt.__newindex) == "table" then
+        oldmt.__newindex[k] = v
+      else
+        rawset(_, k, v)
+      end
+    end,
+  })
+
+  __quickening_global_set = 42
+  assert(rawget(_G, "__quickening_global_set") == nil)
+  assert(observed == 42)
+
+  setmetatable(_G, oldmt)
+  _G.__quickening_global_set = nil
+end
+
 return"OK"

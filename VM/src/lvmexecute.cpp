@@ -85,10 +85,10 @@
 
 #define VM_DISPATCH_TABLE() \
     VM_DISPATCH_OP(LOP_NOP), VM_DISPATCH_OP(LOP_BREAK), VM_DISPATCH_OP(LOP_LOADNIL), VM_DISPATCH_OP(LOP_LOADB), VM_DISPATCH_OP(LOP_LOADN), \
-        VM_DISPATCH_OP(LOP_LOADK), VM_DISPATCH_OP(LOP_MOVE), VM_DISPATCH_OP(LOP_GETGLOBAL), VM_DISPATCH_OP(LOP_SETGLOBAL), \
+        VM_DISPATCH_OP(LOP_LOADK), VM_DISPATCH_OP(LOP_MOVE), VM_DISPATCH_OP(LOP_GETGLOBAL), VM_DISPATCH_OP(LOP_GETGLOBAL_Q), VM_DISPATCH_OP(LOP_SETGLOBAL), VM_DISPATCH_OP(LOP_SETGLOBAL_Q), \
         VM_DISPATCH_OP(LOP_GETUPVAL), VM_DISPATCH_OP(LOP_SETUPVAL), VM_DISPATCH_OP(LOP_CLOSEUPVALS), VM_DISPATCH_OP(LOP_GETIMPORT), \
         VM_DISPATCH_OP(LOP_GETTABLE), VM_DISPATCH_OP(LOP_SETTABLE), VM_DISPATCH_OP(LOP_GETTABLEKS), VM_DISPATCH_OP(LOP_GETTABLEKS_Q), VM_DISPATCH_OP(LOP_SETTABLEKS), VM_DISPATCH_OP(LOP_SETTABLEKS_Q), \
-        VM_DISPATCH_OP(LOP_GETTABLEN), VM_DISPATCH_OP(LOP_SETTABLEN), VM_DISPATCH_OP(LOP_NEWCLOSURE), VM_DISPATCH_OP(LOP_NAMECALL), \
+        VM_DISPATCH_OP(LOP_GETTABLEN), VM_DISPATCH_OP(LOP_GETTABLEN_Q), VM_DISPATCH_OP(LOP_SETTABLEN), VM_DISPATCH_OP(LOP_SETTABLEN_Q), VM_DISPATCH_OP(LOP_NEWCLOSURE), VM_DISPATCH_OP(LOP_NAMECALL), \
         VM_DISPATCH_OP(LOP_CALL), VM_DISPATCH_OP(LOP_RETURN), VM_DISPATCH_OP(LOP_JUMP), VM_DISPATCH_OP(LOP_JUMPBACK), VM_DISPATCH_OP(LOP_JUMPIF), \
         VM_DISPATCH_OP(LOP_JUMPIFNOT), VM_DISPATCH_OP(LOP_JUMPIFEQ), VM_DISPATCH_OP(LOP_JUMPIFLE), VM_DISPATCH_OP(LOP_JUMPIFLT), \
         VM_DISPATCH_OP(LOP_JUMPIFNOTEQ), VM_DISPATCH_OP(LOP_JUMPIFNOTLE), VM_DISPATCH_OP(LOP_JUMPIFNOTLT), VM_DISPATCH_OP(LOP_ADD), \
@@ -136,8 +136,16 @@
 
 LUAU_FASTFLAGVARIABLE(LuauVmQuickeningGetTableKs)
 LUAU_FASTFLAGVARIABLE(LuauVmQuickeningSetTableKs)
+LUAU_FASTFLAGVARIABLE(LuauVmQuickeningGetGlobal)
+LUAU_FASTFLAGVARIABLE(LuauVmQuickeningSetGlobal)
+LUAU_FASTFLAGVARIABLE(LuauVmQuickeningGetTablen)
+LUAU_FASTFLAGVARIABLE(LuauVmQuickeningSetTablen)
 LUAU_FASTINTVARIABLE(LuauVmQuickeningGetTableKsThreshold, 32)
 LUAU_FASTINTVARIABLE(LuauVmQuickeningSetTableKsThreshold, 32)
+LUAU_FASTINTVARIABLE(LuauVmQuickeningGetGlobalThreshold, 32)
+LUAU_FASTINTVARIABLE(LuauVmQuickeningSetGlobalThreshold, 32)
+LUAU_FASTINTVARIABLE(LuauVmQuickeningGetTablenThreshold, 32)
+LUAU_FASTINTVARIABLE(LuauVmQuickeningSetTablenThreshold, 32)
 
 LUAU_NOINLINE void luau_callhook(lua_State* L, lua_Hook hook, void* userdata)
 {
@@ -339,6 +347,7 @@ reentry:
                 Instruction insn = *pc++;
                 StkId ra = VM_REG(LUAU_INSN_A(insn));
                 uint32_t aux = *pc++;
+                const Instruction* insnpc = pc - 2;
                 TValue* kv = VM_KV(aux);
                 LUAU_ASSERT(ttisstring(kv));
 
@@ -350,6 +359,37 @@ reentry:
                 if (LUAU_LIKELY(ttisstring(gkey(n)) && tsvalue(gkey(n)) == tsvalue(kv)) && !ttisnil(gval(n)))
                 {
                     setobj2s(L, ra, gval(n));
+
+                    // quicken a stable GETGLOBAL site to a guarded opcode behind experiment flags
+                    if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningGetGlobal && !L->global->ecb.enter))
+                    {
+                        int threshold = FInt::LuauVmQuickeningGetGlobalThreshold;
+                        Proto* proto = cl->l.p;
+                        bool shouldQuicken = threshold <= 1;
+
+                        if (!shouldQuicken)
+                        {
+                            if (LUAU_UNLIKELY(!proto->quickeningCounters))
+                            {
+                                VM_PROTECT(
+                                    proto->quickeningCounters = luaM_newarray(L, proto->sizecode, uint16_t, proto->memcat);
+                                    for (int i = 0; i < proto->sizecode; ++i)
+                                        proto->quickeningCounters[i] = 0;
+                                );
+                            }
+
+                            int pcpos = int(insnpc - proto->code);
+                            LUAU_ASSERT(unsigned(pcpos) < unsigned(proto->sizecode));
+
+                            uint16_t& counter = proto->quickeningCounters[pcpos];
+                            counter = counter < 0xffff ? uint16_t(counter + 1) : counter;
+                            shouldQuicken = (counter % threshold) == 0;
+                        }
+
+                        if (shouldQuicken)
+                            VM_PATCH_OP(insnpc, LOP_GETGLOBAL_Q);
+                    }
+
                     VM_NEXT();
                 }
                 else
@@ -365,11 +405,35 @@ reentry:
                 }
             }
 
+            VM_CASE(LOP_GETGLOBAL_Q)
+            {
+                Instruction insn = *pc++;
+                StkId ra = VM_REG(LUAU_INSN_A(insn));
+                uint32_t aux = *pc++;
+                TValue* kv = VM_KV(aux);
+                LUAU_ASSERT(ttisstring(kv));
+
+                LuaTable* h = cl->env;
+                int slot = LUAU_INSN_C(insn) & h->nodemask8;
+                LuaNode* n = &h->node[slot];
+
+                if (LUAU_LIKELY(ttisstring(gkey(n)) && tsvalue(gkey(n)) == tsvalue(kv)) && !ttisnil(gval(n)))
+                {
+                    setobj2s(L, ra, gval(n));
+                    VM_NEXT();
+                }
+
+                VM_PATCH_OP(pc - 2, LOP_GETGLOBAL);
+                pc -= 2;
+                VM_CONTINUE(LOP_GETGLOBAL);
+            }
+
             VM_CASE(LOP_SETGLOBAL)
             {
                 Instruction insn = *pc++;
                 StkId ra = VM_REG(LUAU_INSN_A(insn));
                 uint32_t aux = *pc++;
+                const Instruction* insnpc = pc - 2;
                 TValue* kv = VM_KV(aux);
                 LUAU_ASSERT(ttisstring(kv));
 
@@ -382,6 +446,37 @@ reentry:
                 {
                     setobj2t(L, gval(n), ra);
                     luaC_barriert(L, h, ra);
+
+                    // quicken a stable SETGLOBAL site to a guarded opcode behind experiment flags
+                    if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningSetGlobal && !L->global->ecb.enter))
+                    {
+                        int threshold = FInt::LuauVmQuickeningSetGlobalThreshold;
+                        Proto* proto = cl->l.p;
+                        bool shouldQuicken = threshold <= 1;
+
+                        if (!shouldQuicken)
+                        {
+                            if (LUAU_UNLIKELY(!proto->quickeningCounters))
+                            {
+                                VM_PROTECT(
+                                    proto->quickeningCounters = luaM_newarray(L, proto->sizecode, uint16_t, proto->memcat);
+                                    for (int i = 0; i < proto->sizecode; ++i)
+                                        proto->quickeningCounters[i] = 0;
+                                );
+                            }
+
+                            int pcpos = int(insnpc - proto->code);
+                            LUAU_ASSERT(unsigned(pcpos) < unsigned(proto->sizecode));
+
+                            uint16_t& counter = proto->quickeningCounters[pcpos];
+                            counter = counter < 0xffff ? uint16_t(counter + 1) : counter;
+                            shouldQuicken = (counter % threshold) == 0;
+                        }
+
+                        if (shouldQuicken)
+                            VM_PATCH_OP(insnpc, LOP_SETGLOBAL_Q);
+                    }
+
                     VM_NEXT();
                 }
                 else
@@ -395,6 +490,30 @@ reentry:
                     VM_PATCH_C(pc - 2, L->cachedslot);
                     VM_NEXT();
                 }
+            }
+
+            VM_CASE(LOP_SETGLOBAL_Q)
+            {
+                Instruction insn = *pc++;
+                StkId ra = VM_REG(LUAU_INSN_A(insn));
+                uint32_t aux = *pc++;
+                TValue* kv = VM_KV(aux);
+                LUAU_ASSERT(ttisstring(kv));
+
+                LuaTable* h = cl->env;
+                int slot = LUAU_INSN_C(insn) & h->nodemask8;
+                LuaNode* n = &h->node[slot];
+
+                if (LUAU_LIKELY(ttisstring(gkey(n)) && tsvalue(gkey(n)) == tsvalue(kv) && !ttisnil(gval(n)) && !h->readonly))
+                {
+                    setobj2t(L, gval(n), ra);
+                    luaC_barriert(L, h, ra);
+                    VM_NEXT();
+                }
+
+                VM_PATCH_OP(pc - 2, LOP_SETGLOBAL);
+                pc -= 2;
+                VM_CONTINUE(LOP_SETGLOBAL);
             }
 
             VM_CASE(LOP_GETUPVAL)
@@ -839,6 +958,7 @@ reentry:
                 StkId ra = VM_REG(LUAU_INSN_A(insn));
                 StkId rb = VM_REG(LUAU_INSN_B(insn));
                 int c = LUAU_INSN_C(insn);
+                const Instruction* insnpc = pc - 1;
 
                 // fast-path: array lookup
                 if (ttistable(rb))
@@ -848,6 +968,37 @@ reentry:
                     if (LUAU_LIKELY(unsigned(c) < unsigned(h->sizearray) && !h->metatable))
                     {
                         setobj2s(L, ra, &h->array[c]);
+
+                        // quicken a stable GETTABLEN site to a guarded opcode behind experiment flags
+                        if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningGetTablen && !L->global->ecb.enter))
+                        {
+                            int threshold = FInt::LuauVmQuickeningGetTablenThreshold;
+                            Proto* proto = cl->l.p;
+                            bool shouldQuicken = threshold <= 1;
+
+                            if (!shouldQuicken)
+                            {
+                                if (LUAU_UNLIKELY(!proto->quickeningCounters))
+                                {
+                                    VM_PROTECT(
+                                        proto->quickeningCounters = luaM_newarray(L, proto->sizecode, uint16_t, proto->memcat);
+                                        for (int i = 0; i < proto->sizecode; ++i)
+                                            proto->quickeningCounters[i] = 0;
+                                    );
+                                }
+
+                                int pcpos = int(insnpc - proto->code);
+                                LUAU_ASSERT(unsigned(pcpos) < unsigned(proto->sizecode));
+
+                                uint16_t& counter = proto->quickeningCounters[pcpos];
+                                counter = counter < 0xffff ? uint16_t(counter + 1) : counter;
+                                shouldQuicken = (counter % threshold) == 0;
+                            }
+
+                            if (shouldQuicken)
+                                VM_PATCH_OP(insnpc, LOP_GETTABLEN_Q);
+                        }
+
                         VM_NEXT();
                     }
 
@@ -861,12 +1012,36 @@ reentry:
                 VM_NEXT();
             }
 
+            VM_CASE(LOP_GETTABLEN_Q)
+            {
+                Instruction insn = *pc++;
+                StkId ra = VM_REG(LUAU_INSN_A(insn));
+                StkId rb = VM_REG(LUAU_INSN_B(insn));
+                int c = LUAU_INSN_C(insn);
+
+                if (ttistable(rb))
+                {
+                    LuaTable* h = hvalue(rb);
+
+                    if (LUAU_LIKELY(unsigned(c) < unsigned(h->sizearray) && !h->metatable))
+                    {
+                        setobj2s(L, ra, &h->array[c]);
+                        VM_NEXT();
+                    }
+                }
+
+                VM_PATCH_OP(pc - 1, LOP_GETTABLEN);
+                pc -= 1;
+                VM_CONTINUE(LOP_GETTABLEN);
+            }
+
             VM_CASE(LOP_SETTABLEN)
             {
                 Instruction insn = *pc++;
                 StkId ra = VM_REG(LUAU_INSN_A(insn));
                 StkId rb = VM_REG(LUAU_INSN_B(insn));
                 int c = LUAU_INSN_C(insn);
+                const Instruction* insnpc = pc - 1;
 
                 // fast-path: array assign
                 if (ttistable(rb))
@@ -877,6 +1052,37 @@ reentry:
                     {
                         setobj2t(L, &h->array[c], ra);
                         luaC_barriert(L, h, ra);
+
+                        // quicken a stable SETTABLEN site to a guarded opcode behind experiment flags
+                        if (LUAU_UNLIKELY(FFlag::LuauVmQuickeningSetTablen && !L->global->ecb.enter))
+                        {
+                            int threshold = FInt::LuauVmQuickeningSetTablenThreshold;
+                            Proto* proto = cl->l.p;
+                            bool shouldQuicken = threshold <= 1;
+
+                            if (!shouldQuicken)
+                            {
+                                if (LUAU_UNLIKELY(!proto->quickeningCounters))
+                                {
+                                    VM_PROTECT(
+                                        proto->quickeningCounters = luaM_newarray(L, proto->sizecode, uint16_t, proto->memcat);
+                                        for (int i = 0; i < proto->sizecode; ++i)
+                                            proto->quickeningCounters[i] = 0;
+                                    );
+                                }
+
+                                int pcpos = int(insnpc - proto->code);
+                                LUAU_ASSERT(unsigned(pcpos) < unsigned(proto->sizecode));
+
+                                uint16_t& counter = proto->quickeningCounters[pcpos];
+                                counter = counter < 0xffff ? uint16_t(counter + 1) : counter;
+                                shouldQuicken = (counter % threshold) == 0;
+                            }
+
+                            if (shouldQuicken)
+                                VM_PATCH_OP(insnpc, LOP_SETTABLEN_Q);
+                        }
+
                         VM_NEXT();
                     }
 
@@ -888,6 +1094,30 @@ reentry:
                 setnvalue(&n, c + 1);
                 VM_PROTECT(luaV_settable(L, rb, &n, ra));
                 VM_NEXT();
+            }
+
+            VM_CASE(LOP_SETTABLEN_Q)
+            {
+                Instruction insn = *pc++;
+                StkId ra = VM_REG(LUAU_INSN_A(insn));
+                StkId rb = VM_REG(LUAU_INSN_B(insn));
+                int c = LUAU_INSN_C(insn);
+
+                if (ttistable(rb))
+                {
+                    LuaTable* h = hvalue(rb);
+
+                    if (LUAU_LIKELY(unsigned(c) < unsigned(h->sizearray) && !h->metatable && !h->readonly))
+                    {
+                        setobj2t(L, &h->array[c], ra);
+                        luaC_barriert(L, h, ra);
+                        VM_NEXT();
+                    }
+                }
+
+                VM_PATCH_OP(pc - 1, LOP_SETTABLEN);
+                pc -= 1;
+                VM_CONTINUE(LOP_SETTABLEN);
             }
 
             VM_CASE(LOP_NEWCLOSURE)

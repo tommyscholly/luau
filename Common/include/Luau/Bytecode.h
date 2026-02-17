@@ -93,11 +93,25 @@ enum LuauOpcode
     // AUX: constant table index
     LOP_GETGLOBAL,
 
+    // GETGLOBAL_Q: quickened variant of GETGLOBAL for VM-only specialization experiments
+    // A: target register
+    // C: predicted slot index (based on hash)
+    // AUX: constant table index
+    // Note: this opcode is currently produced by VM runtime patching and is not emitted by the compiler.
+    LOP_GETGLOBAL_Q,
+
     // SETGLOBAL: set value in global table using constant string as a key
     // A: source register
     // C: predicted slot index (based on hash)
     // AUX: constant table index
     LOP_SETGLOBAL,
+
+    // SETGLOBAL_Q: quickened variant of SETGLOBAL for VM-only specialization experiments
+    // A: source register
+    // C: predicted slot index (based on hash)
+    // AUX: constant table index
+    // Note: this opcode is currently produced by VM runtime patching and is not emitted by the compiler.
+    LOP_SETGLOBAL_Q,
 
     // GETUPVAL: load upvalue from the upvalue table for the current function
     // A: target register
@@ -167,11 +181,25 @@ enum LuauOpcode
     // C: index-1 (index is 1..256)
     LOP_GETTABLEN,
 
+    // GETTABLEN_Q: quickened variant of GETTABLEN for VM-only specialization experiments
+    // A: target register
+    // B: table register
+    // C: index-1 (index is 1..256)
+    // Note: this opcode is currently produced by VM runtime patching and is not emitted by the compiler.
+    LOP_GETTABLEN_Q,
+
     // SETTABLEN: store source register into table using small integer index as a key
     // A: source register
     // B: table register
     // C: index-1 (index is 1..256)
     LOP_SETTABLEN,
+
+    // SETTABLEN_Q: quickened variant of SETTABLEN for VM-only specialization experiments
+    // A: source register
+    // B: table register
+    // C: index-1 (index is 1..256)
+    // Note: this opcode is currently produced by VM runtime patching and is not emitted by the compiler.
+    LOP_SETTABLEN_Q,
 
     // NEWCLOSURE: create closure from a child proto; followed by a CAPTURE instruction for each upvalue
     // A: target register

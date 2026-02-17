@@ -11,7 +11,9 @@ inline int getOpLength(LuauOpcode op)
     switch (op)
     {
     case LOP_GETGLOBAL:
+    case LOP_GETGLOBAL_Q:
     case LOP_SETGLOBAL:
+    case LOP_SETGLOBAL_Q:
     case LOP_GETIMPORT:
     case LOP_GETTABLEKS:
     case LOP_GETTABLEKS_Q:
