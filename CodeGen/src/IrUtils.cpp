@@ -35,7 +35,9 @@ int getOpLength(LuauOpcode op)
     case LOP_SETGLOBAL:
     case LOP_GETIMPORT:
     case LOP_GETTABLEKS:
+    case LOP_GETTABLEKS_Q:
     case LOP_SETTABLEKS:
+    case LOP_SETTABLEKS_Q:
     case LOP_NAMECALL:
     case LOP_JUMPIFEQ:
     case LOP_JUMPIFLE:

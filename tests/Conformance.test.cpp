@@ -41,6 +41,10 @@ LUAU_FASTINT(CodegenHeuristicsInstructionLimit)
 LUAU_FASTFLAG(LuauStacklessPcall)
 LUAU_FASTFLAG(LuauCodegenExtraSimd)
 LUAU_FASTFLAG(LuauCodegenExtraSpills)
+LUAU_FASTFLAG(LuauVmQuickeningGetTableKs)
+LUAU_FASTINT(LuauVmQuickeningGetTableKsThreshold)
+LUAU_FASTFLAG(LuauVmQuickeningSetTableKs)
+LUAU_FASTINT(LuauVmQuickeningSetTableKsThreshold)
 
 static lua_CompileOptions defaultOptions()
 {
@@ -836,6 +840,72 @@ TEST_CASE("Math")
 
 TEST_CASE("Tables")
 {
+    runConformance(
+        "tables.luau",
+        [](lua_State* L)
+        {
+            lua_pushcfunction(
+                L,
+                [](lua_State* L)
+                {
+                    if (lua_type(L, 1) == LUA_TNUMBER)
+                    {
+                        unsigned v = luaL_checkunsigned(L, 1);
+                        lua_pushlightuserdata(L, reinterpret_cast<void*>(uintptr_t(v)));
+                    }
+                    else
+                    {
+                        const void* p = lua_topointer(L, 1);
+                        LUAU_ASSERT(p); // we expect the test call to only pass GC values here
+                        lua_pushlightuserdata(L, const_cast<void*>(p));
+                    }
+                    return 1;
+                },
+                "makelud"
+            );
+            lua_setglobal(L, "makelud");
+        }
+    );
+}
+
+TEST_CASE("TablesQuickening")
+{
+    ScopedFastFlag quickening{FFlag::LuauVmQuickeningGetTableKs, true};
+    ScopedFastInt threshold{FInt::LuauVmQuickeningGetTableKsThreshold, 1};
+
+    runConformance(
+        "tables.luau",
+        [](lua_State* L)
+        {
+            lua_pushcfunction(
+                L,
+                [](lua_State* L)
+                {
+                    if (lua_type(L, 1) == LUA_TNUMBER)
+                    {
+                        unsigned v = luaL_checkunsigned(L, 1);
+                        lua_pushlightuserdata(L, reinterpret_cast<void*>(uintptr_t(v)));
+                    }
+                    else
+                    {
+                        const void* p = lua_topointer(L, 1);
+                        LUAU_ASSERT(p); // we expect the test call to only pass GC values here
+                        lua_pushlightuserdata(L, const_cast<void*>(p));
+                    }
+                    return 1;
+                },
+                "makelud"
+            );
+            lua_setglobal(L, "makelud");
+        }
+    );
+}
+
+TEST_CASE("TablesQuickeningSet")
+{
+    ScopedFastFlag quickening{FFlag::LuauVmQuickeningSetTableKs, true};
+    ScopedFastInt threshold{FInt::LuauVmQuickeningSetTableKsThreshold, 1};
+
     runConformance(
         "tables.luau",
         [](lua_State* L)

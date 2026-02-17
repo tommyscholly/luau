@@ -297,6 +297,7 @@ typedef struct Proto
     Instruction* code;      // function bytecode
     struct Proto** p;       // functions defined inside the function
     const Instruction* codeentry;
+    uint16_t* quickeningCounters; // optional per-instruction quickening counters, lazily allocated
 
     void* execdata;
     uintptr_t exectarget;

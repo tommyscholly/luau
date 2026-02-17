@@ -485,8 +485,8 @@ static void dumpbuffer(FILE* f, Buffer* b)
 
 static void dumpproto(FILE* f, Proto* p)
 {
-    size_t size = sizeof(Proto) + sizeof(Instruction) * p->sizecode + sizeof(Proto*) * p->sizep + sizeof(TValue) * p->sizek + p->sizelineinfo +
-                  sizeof(LocVar) * p->sizelocvars + sizeof(TString*) * p->sizeupvalues;
+    size_t size = sizeof(Proto) + sizeof(Instruction) * p->sizecode + (p->quickeningCounters ? sizeof(uint16_t) * p->sizecode : 0) + sizeof(Proto*) * p->sizep +
+                  sizeof(TValue) * p->sizek + p->sizelineinfo + sizeof(LocVar) * p->sizelocvars + sizeof(TString*) * p->sizeupvalues;
 
     fprintf(f, "{\"type\":\"proto\",\"cat\":%d,\"size\":%d", p->memcat, int(size));
 
@@ -822,8 +822,8 @@ static void enumbuffer(EnumContext* ctx, Buffer* b)
 
 static void enumproto(EnumContext* ctx, Proto* p)
 {
-    size_t size = sizeof(Proto) + sizeof(Instruction) * p->sizecode + sizeof(Proto*) * p->sizep + sizeof(TValue) * p->sizek + p->sizelineinfo +
-                  sizeof(LocVar) * p->sizelocvars + sizeof(TString*) * p->sizeupvalues;
+    size_t size = sizeof(Proto) + sizeof(Instruction) * p->sizecode + (p->quickeningCounters ? sizeof(uint16_t) * p->sizecode : 0) + sizeof(Proto*) * p->sizep +
+                  sizeof(TValue) * p->sizek + p->sizelineinfo + sizeof(LocVar) * p->sizelocvars + sizeof(TString*) * p->sizeupvalues;
 
     if (p->execdata && ctx->L->global->ecb.getmemorysize)
     {

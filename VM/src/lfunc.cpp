@@ -22,6 +22,7 @@ Proto* luaF_newproto(lua_State* L)
     f->code = NULL;
     f->p = NULL;
     f->codeentry = NULL;
+    f->quickeningCounters = NULL;
 
     f->execdata = NULL;
     f->exectarget = 0;
@@ -164,6 +165,8 @@ void luaF_freeproto(lua_State* L, Proto* f, lua_Page* page)
     luaM_freearray(L, f->code, f->sizecode, Instruction, f->memcat);
     luaM_freearray(L, f->p, f->sizep, Proto*, f->memcat);
     luaM_freearray(L, f->k, f->sizek, TValue, f->memcat);
+    if (f->quickeningCounters)
+        luaM_freearray(L, f->quickeningCounters, f->sizecode, uint16_t, f->memcat);
     if (f->lineinfo)
         luaM_freearray(L, f->lineinfo, f->sizelineinfo, uint8_t, f->memcat);
     luaM_freearray(L, f->locvars, f->sizelocvars, struct LocVar, f->memcat);

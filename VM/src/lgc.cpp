@@ -522,8 +522,8 @@ static size_t propagatemark(global_State* g)
         g->gray = p->gclist;
         traverseproto(g, p);
 
-        return sizeof(Proto) + sizeof(Instruction) * p->sizecode + sizeof(Proto*) * p->sizep + sizeof(TValue) * p->sizek + p->sizelineinfo +
-               sizeof(LocVar) * p->sizelocvars + sizeof(TString*) * p->sizeupvalues + p->sizetypeinfo;
+        return sizeof(Proto) + sizeof(Instruction) * p->sizecode + (p->quickeningCounters ? sizeof(uint16_t) * p->sizecode : 0) + sizeof(Proto*) * p->sizep +
+               sizeof(TValue) * p->sizek + p->sizelineinfo + sizeof(LocVar) * p->sizelocvars + sizeof(TString*) * p->sizeupvalues + p->sizetypeinfo;
     }
     default:
         LUAU_ASSERT(0);

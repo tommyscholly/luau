@@ -1375,7 +1375,9 @@ void BytecodeBuilder::validateInstructions() const
             break;
 
         case LOP_GETTABLEKS:
+        case LOP_GETTABLEKS_Q:
         case LOP_SETTABLEKS:
+        case LOP_SETTABLEKS_Q:
             VREG(LUAU_INSN_A(insn));
             VREG(LUAU_INSN_B(insn));
             VCONST(insns[i + 1], String);
@@ -1795,7 +1797,7 @@ void BytecodeBuilder::validateVariadic() const
             // (we can't simply start a variadic sequence here because that would trigger assertions during linked CALL validation)
         }
         else if (op == LOP_CLOSEUPVALS || op == LOP_NAMECALL || op == LOP_GETIMPORT || op == LOP_MOVE || op == LOP_GETUPVAL || op == LOP_GETGLOBAL ||
-                 op == LOP_GETTABLEKS || op == LOP_COVERAGE)
+                 op == LOP_GETTABLEKS || op == LOP_GETTABLEKS_Q || op == LOP_SETTABLEKS_Q || op == LOP_COVERAGE)
         {
             // instructions inside a variadic sequence must be neutral (can't change L->top)
             // while there are many neutral instructions like this, here we check that the instruction is one of the few
@@ -2004,8 +2006,22 @@ void BytecodeBuilder::dumpInstruction(const uint32_t* code, std::string& result,
         code++;
         break;
 
+    case LOP_GETTABLEKS_Q:
+        formatAppend(result, "GETTABLEKS_Q R%d R%d K%d [", LUAU_INSN_A(insn), LUAU_INSN_B(insn), *code);
+        dumpConstant(result, *code);
+        result.append("]\n");
+        code++;
+        break;
+
     case LOP_SETTABLEKS:
         formatAppend(result, "SETTABLEKS R%d R%d K%d [", LUAU_INSN_A(insn), LUAU_INSN_B(insn), *code);
+        dumpConstant(result, *code);
+        result.append("]\n");
+        code++;
+        break;
+
+    case LOP_SETTABLEKS_Q:
+        formatAppend(result, "SETTABLEKS_Q R%d R%d K%d [", LUAU_INSN_A(insn), LUAU_INSN_B(insn), *code);
         dumpConstant(result, *code);
         result.append("]\n");
         code++;

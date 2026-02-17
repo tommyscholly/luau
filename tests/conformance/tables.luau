@@ -754,4 +754,48 @@ assert((function ()
   return t.hi
 end)() == nil)
 
+-- quickening stress: stable key lookups that later invalidate assumptions must still behave correctly
+do
+  local t = { foo = 1 }
+
+  for i = 1, 128 do
+    assert(t.foo == 1)
+  end
+
+  setmetatable(t, {
+    __index = function()
+      return 2
+    end,
+  })
+
+  t.foo = nil
+
+  for i = 1, 32 do
+    assert(t.foo == 2)
+  end
+end
+
+-- quickening stress for SETTABLEKS: writes start as direct slot updates and later must fall back to __newindex
+do
+  local t = { foo = 0 }
+
+  for i = 1, 128 do
+    t.foo = i
+    assert(t.foo == i)
+  end
+
+  t.foo = nil
+
+  local observed = 0
+  setmetatable(t, {
+    __newindex = function(_, _, v)
+      observed = v
+    end,
+  })
+
+  t.foo = 42
+  assert(t.foo == nil)
+  assert(observed == 42)
+end
+
 return"OK"

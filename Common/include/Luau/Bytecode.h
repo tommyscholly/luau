@@ -138,12 +138,28 @@ enum LuauOpcode
     // AUX: constant table index
     LOP_GETTABLEKS,
 
+    // GETTABLEKS_Q: quickened variant of GETTABLEKS for VM-only specialization experiments
+    // A: target register
+    // B: table register
+    // C: predicted slot index (based on hash)
+    // AUX: constant table index
+    // Note: this opcode is currently produced by VM runtime patching and is not emitted by the compiler.
+    LOP_GETTABLEKS_Q,
+
     // SETTABLEKS: store source register into table using constant string as a key
     // A: source register
     // B: table register
     // C: predicted slot index (based on hash)
     // AUX: constant table index
     LOP_SETTABLEKS,
+
+    // SETTABLEKS_Q: quickened variant of SETTABLEKS for VM-only specialization experiments
+    // A: source register
+    // B: table register
+    // C: predicted slot index (based on hash)
+    // AUX: constant table index
+    // Note: this opcode is currently produced by VM runtime patching and is not emitted by the compiler.
+    LOP_SETTABLEKS_Q,
 
     // GETTABLEN: load value from table into target register using small integer index as a key
     // A: target register

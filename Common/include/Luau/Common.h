@@ -6,14 +6,18 @@
 #define LUAU_NORETURN __declspec(noreturn)
 #define LUAU_NOINLINE __declspec(noinline)
 #define LUAU_FORCEINLINE __forceinline
+#define LUAU_RESTRICT __restrict
 #define LUAU_LIKELY(x) x
 #define LUAU_UNLIKELY(x) x
 #define LUAU_UNREACHABLE() __assume(false)
+// The expression must be side-effect free; this is a codegen hint, not a runtime check.
+#define LUAU_ASSUME(x) __assume(x)
 #define LUAU_DEBUGBREAK() __debugbreak()
 #else
 #define LUAU_NORETURN __attribute__((__noreturn__))
 #define LUAU_NOINLINE __attribute__((noinline))
 #define LUAU_FORCEINLINE inline __attribute__((always_inline))
+#define LUAU_RESTRICT __restrict__
 #define LUAU_LIKELY(x) __builtin_expect(x, 1)
 #define LUAU_UNLIKELY(x) __builtin_expect(x, 0)
 #define LUAU_UNREACHABLE() __builtin_unreachable()
