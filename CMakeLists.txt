@@ -8,6 +8,7 @@ cmake_minimum_required(VERSION 3.10)
 
 option(LUAU_BUILD_CLI "Build CLI" ON)
 option(LUAU_BUILD_TESTS "Build tests" ON)
+option(LUAU_BUILD_BENCHMARKS "Build local C++ benchmarks" OFF)
 option(LUAU_BUILD_WEB "Build Web module" OFF)
 option(LUAU_WERROR "Warnings as errors" OFF)
 option(LUAU_STATIC_CRT "Link with the static CRT (/MT)" OFF)
@@ -314,6 +315,13 @@ if(LUAU_BUILD_WEB)
 
     # the output is a single .js file with an embedded wasm blob
     target_link_options(Luau.Web PRIVATE -sSINGLE_FILE=1)
+endif()
+
+if(LUAU_BUILD_BENCHMARKS)
+    if(CMAKE_VERSION VERSION_LESS "3.14")
+        message(FATAL_ERROR "LUAU_BUILD_BENCHMARKS requires CMake 3.14 or higher (for FetchContent)")
+    endif()
+    add_subdirectory(bench/cpp)
 endif()
 
 # validate dependencies for internal libraries

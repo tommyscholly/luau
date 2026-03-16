@@ -78,7 +78,16 @@ ifneq ($(opt),)
 endif
 
 OBJECTS=$(COMMON_OBJECTS) $(AST_OBJECTS) $(COMPILER_OBJECTS) $(CONFIG_OBJECTS) $(ANALYSIS_OBJECTS) $(EQSAT_OBJECTS) $(CODEGEN_OBJECTS) $(VM_OBJECTS) $(REQUIRE_OBJECTS) $(ISOCLINE_OBJECTS) $(TESTS_OBJECTS) $(REPL_CLI_OBJECTS) $(ANALYZE_CLI_OBJECTS) $(COMPILE_CLI_OBJECTS) $(BYTECODE_CLI_OBJECTS) $(FUZZ_OBJECTS)
-EXECUTABLE_ALIASES = luau luau-analyze luau-compile luau-bytecode luau-tests
+EXECUTABLE_ALIASES = luau luau-analyze luau-compile luau-bytecode luau-tests luau-benchmark
+
+BENCH_BUILD_DIR=build/bench-$(config)
+ifeq ($(config),release)
+	BENCH_CMAKE_TYPE=Release
+else
+	BENCH_CMAKE_TYPE=Debug
+endif
+BENCH_STAMP=$(BENCH_BUILD_DIR)/.luau-benchmark-built
+BENCH_TARGET=$(BENCH_BUILD_DIR)/.luau-benchmark-link
 
 # common flags
 CXXFLAGS=-g -Wall
@@ -168,7 +177,7 @@ $(ANALYZE_CLI_TARGET): LDFLAGS+=-lpthread
 fuzz-proto fuzz-prototest: LDFLAGS+=build/libprotobuf-mutator/src/libfuzzer/libprotobuf-mutator-libfuzzer.a build/libprotobuf-mutator/src/libprotobuf-mutator.a $(LPROTOBUF)
 
 # pseudo targets
-.PHONY: all test clean coverage format luau-size aliases
+.PHONY: all test clean coverage format luau-size aliases bench luau-benchmark
 
 all: $(REPL_CLI_TARGET) $(ANALYZE_CLI_TARGET) $(TESTS_TARGET) aliases
 
@@ -182,6 +191,7 @@ conformance: $(TESTS_TARGET)
 
 clean:
 	rm -rf $(BUILD)
+	rm -rf build/bench-*
 	rm -rf $(EXECUTABLE_ALIASES)
 
 coverage: $(TESTS_TARGET) $(COMPILE_CLI_TARGET)
@@ -231,6 +241,25 @@ luau-bytecode: $(BYTECODE_CLI_TARGET)
 
 luau-tests: $(TESTS_TARGET)
 	ln -fs $^ $@
+
+# C++ Google benchmark (built via CMake; requires CMake 3.14+)
+$(BENCH_BUILD_DIR)/CMakeCache.txt:
+	@mkdir -p $(BENCH_BUILD_DIR)
+	$(CMAKE_PATH) -S . -B $(BENCH_BUILD_DIR) -DCMAKE_BUILD_TYPE=$(BENCH_CMAKE_TYPE) -DLUAU_BUILD_BENCHMARKS=ON -DLUAU_BUILD_CLI=OFF -DLUAU_BUILD_TESTS=OFF
+
+$(BENCH_STAMP): $(BENCH_BUILD_DIR)/CMakeCache.txt
+	$(CMAKE_PATH) --build $(BENCH_BUILD_DIR) --target Luau.Benchmark
+	@touch $@
+
+$(BENCH_TARGET): $(BENCH_STAMP)
+	@BIN=$$(find $(abspath $(BENCH_BUILD_DIR)) -maxdepth 2 -name 'luau-benchmark*' -type f 2>/dev/null | head -1); \
+	test -n "$$BIN" || (echo "Error: luau-benchmark binary not found"; exit 1); \
+	ln -fs "$$BIN" $@
+
+luau-benchmark: $(BENCH_TARGET)
+	ln -fs $^ $@
+
+bench: luau-benchmark
 
 # executable targets
 $(TESTS_TARGET): $(TESTS_OBJECTS) $(ANALYSIS_TARGET) $(EQSAT_TARGET) $(COMPILER_TARGET) $(AST_TARGET) $(CODEGEN_TARGET) $(VM_TARGET) $(REQUIRE_TARGET) $(CONFIG_TARGET) $(ISOCLINE_TARGET) $(COMMON_TARGET)

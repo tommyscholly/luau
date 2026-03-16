@@ -1,0 +1,32 @@
+# Example TOML config for run_google_benchmark.py
+# Run: python bench/run_google_benchmark.py <path-to-luau-benchmark> bench/google_benchmark_example.toml
+
+repetitions = 3
+
+# Minimum seconds to run each benchmark before reporting. Google Benchmark keeps iterating until
+# total time exceeds this. Lower = faster runs but noisier; higher = more stable results.
+# Optional; default is 0.2. Omit if you're fine with the default.
+min_time = 0.2
+
+scripts_root = "bench/tests"
+phases = ["parse", "compile", "vm"]
+
+# Which Lua scripts to benchmark. Three options:
+#   "all"                    - run every .lua/.luau file under scripts_root (default)
+#   "regex"                  - run only scripts whose relative path matches the regex, e.g. "shootout/.*"
+#   ["path/a.lua", "b.luau"] - run only these scripts (paths relative to scripts_root)
+tests = "all"
+
+[baseline]
+opt_level = 2
+debug_level = 1
+codegen = "off"
+# Luau fast flags: feature flags that control runtime behavior. Dict format: flag name -> value.
+# Examples: {"LuauSomeFlag" = true}, {"FFlagX" = false}. Use {} for default flags.
+fflags = {}
+
+[comparison]
+opt_level = 2
+debug_level = 1
+codegen = "on"
+fflags = {}
