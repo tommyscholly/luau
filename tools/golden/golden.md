@@ -425,3 +425,40 @@ signals, all other exit codes, and invalid UTF-8 output are harness failures tha
 separately and do not match against a `fail` status. Output from all commands is decoded strictly as
 UTF-8. Each command's stderr is redirected to stdout before launch, preserving their combined pipe
 order, but reducing the number of required output files for each test.
+
+
+## Bytecode graph verification
+
+The `bytecode-graph` command compiles ordinary source with `luau-compile` and
+runs graph verifiers. Supply at least one verifier name through the args
+directive. It is opt-in through command arguments, a command status,
+a regex expectation, or an exact graph snapshot. Existing entries continue to
+run their original strict, nonstrict, and runtime commands.
+
+```lua
+--!golden status: ok
+--!golden bytecode-graph.args: --verify-bytecode-graph=roundtrip --verify-bytecode-graph=use-consistency --verify-bytecode-graph-policy=require-pass
+--!golden bytecode-graph.status: ok
+```
+
+`<command>.args` accepts shell-style quoted arguments and passes them only to
+that command, before flags and the entry path. Put an args directive on its own
+line; commas in arguments are retained. `<command>.status` and
+`<configuration>.<command>.status` accept `ok` or `fail`, with the configuration
+value taking precedence. Explicit command statuses override the aggregate
+status for that command. Other commands retain the existing aggregate status
+rules.
+
+Compiler discovery checks explicit `--luau-compile`, `LUAU_COMPILE`, colocated
+executables, common build directories, and PATH. The compiler is required only
+when a selected entry enables the graph command. CMake's `Luau.GoldenTest` and
+`make golden` build and supply it automatically.
+
+To save deterministic graph snapshots:
+
+```sh
+python3 -m tools.golden --update=bytecode-graph bytecode-graph
+```
+
+The initial source corpus is `tests/golden/bytecode-graph`. Each source also
+checks its language behavior under the existing commands.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 
 from collections.abc import Sequence
 from pathlib import Path
@@ -92,6 +93,28 @@ def _parse_assignment(spec: DirectiveSpec, assignment: str, source: str) -> None
         raise GoldenError(f"malformed assignment in {source}: {assignment!r}")
 
     parts = key.split(".")
+    if len(parts) == 2 and parts[0] in COMMANDS and parts[1] == "args":
+        command = parts[0]
+        if command in spec.command_args:
+            raise GoldenError(f"duplicate arguments for {command} in {source}")
+        try:
+            spec.command_args[command] = tuple(shlex.split(value))
+        except ValueError as exc:
+            raise GoldenError(f"invalid arguments in {source}: {exc}") from exc
+        return
+
+    if len(parts) in (2, 3) and parts[-1] == "status" and parts[-2] in COMMANDS:
+        config = parts[0] if len(parts) == 3 else None
+        if config is not None and config not in CONFIGURATIONS:
+            raise GoldenError(f"unknown configuration in {source}: {config!r}")
+        if value not in STATUSES:
+            raise GoldenError(f"status must be 'ok' or 'fail' in {source}: {value!r}")
+        status_key = (config, parts[-2])
+        if status_key in spec.command_status:
+            raise GoldenError(f"duplicate command status in {source}")
+        spec.command_status[status_key] = value
+        return
+
     if parts == ["status"]:
         if value not in STATUSES:
             raise GoldenError(f"status must be 'ok' or 'fail' in {source}: {value!r}")
@@ -170,7 +193,9 @@ def parse_directives(lines: Sequence[tuple[int, str]], path: Path) -> DirectiveS
             _parse_assignment(spec, f"status: {payload}", source)
             continue
 
-        for assignment in _split_assignments(payload, source):
+        # Argument strings may contain commas (for example --fflags=A=true,B=false).
+        assignments = [payload] if re.match(r"[\w-]+\.args\s*:", payload) else _split_assignments(payload, source)
+        for assignment in assignments:
             _parse_assignment(spec, assignment, source)
 
     return spec

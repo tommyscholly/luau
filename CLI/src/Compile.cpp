@@ -6,6 +6,7 @@
 #include "Luau/CodeGen.h"
 #include "Luau/Compiler.h"
 #include "Luau/BytecodeBuilder.h"
+#include "Luau/BytecodeGraphVerification.h"
 #include "Luau/Parser.h"
 #include "Luau/TimeTrace.h"
 
@@ -58,6 +59,9 @@ struct GlobalOptions
     bool parseCst = false;
 
     bool dumpRegSpills = false;
+
+    Luau::Bytecode::BytecodeGraphVerificationOptions graphVerification;
+    bool graphVerificationJson = false;
 } globalOptions;
 
 static Luau::CompileOptions copts()
@@ -389,6 +393,13 @@ static bool compileFile(
         stats.bytecodeInstructionCount = bcb.getTotalInstructionCount();
         stats.compileTime += recordDeltaTime(currts);
 
+        if (!globalOptions.graphVerification.verifiers.empty())
+        {
+            auto results = Luau::Bytecode::verifyBytecodeGraphs(bcb, globalOptions.graphVerification);
+            printf("%s", Luau::Bytecode::formatBytecodeGraphVerification(name, results, globalOptions.graphVerificationJson).c_str());
+            return Luau::Bytecode::bytecodeGraphVerificationAccepted(results, globalOptions.graphVerification.requirePass);
+        }
+
         switch (format)
         {
         case CompileFormat::Text:
@@ -451,6 +462,9 @@ static void displayHelp(const char* argv0)
     printf("  --vector-lib=<name>: name of the library providing vector type operations.\n");
     printf("  --vector-ctor=<name>: name of the function constructing a vector value.\n");
     printf("  --vector-type=<name>: name of the vector type.\n");
+    printf("  --verify-bytecode-graph=<name>: verify compiled graphs (repeatable; roundtrip, use-consistency, summary, all).\n");
+    printf("  --verify-bytecode-graph-policy=<allow-decline|require-pass>: default allow-decline.\n");
+    printf("  --verify-bytecode-graph-output=<text|json>: default text; JSON emits one object per file.\n");
     printf("  --only-parse: Only parse the input.\n");
     printf("  --parse-cst: Whether parser should parse CST in addition to AST.\n");
     printf("  --fflags=<flags>: comma-separated list of fast flags to enable/disable (--fflags=true,false,LuauFlag1=true,LuauFlag2=false).\n");
@@ -596,6 +610,36 @@ int main(int argc, char** argv)
                 return 1;
             }
         }
+        else if (strncmp(argv[i], "--verify-bytecode-graph=", 24) == 0)
+        {
+            auto verifier = Luau::Bytecode::parseBytecodeGraphVerifier(argv[i] + 24);
+            if (!verifier)
+            {
+                fprintf(stderr, "Error: Unknown bytecode graph verifier: %s\n", argv[i] + 24);
+                return 1;
+            }
+            globalOptions.graphVerification.verifiers.push_back(*verifier);
+        }
+        else if (strncmp(argv[i], "--verify-bytecode-graph-policy=", 31) == 0)
+        {
+            std::string_view policy = argv[i] + 31;
+            if (policy != "allow-decline" && policy != "require-pass")
+            {
+                fprintf(stderr, "Error: Unknown bytecode graph verification policy.\n");
+                return 1;
+            }
+            globalOptions.graphVerification.requirePass = policy == "require-pass";
+        }
+        else if (strncmp(argv[i], "--verify-bytecode-graph-output=", 31) == 0)
+        {
+            std::string_view output = argv[i] + 31;
+            if (output != "text" && output != "json")
+            {
+                fprintf(stderr, "Error: Unknown bytecode graph verification output.\n");
+                return 1;
+            }
+            globalOptions.graphVerificationJson = output == "json";
+        }
         else if (strncmp(argv[i], "--fflags=", 9) == 0)
         {
             setLuauFlags(argv[i] + 9);
@@ -632,6 +676,15 @@ int main(int argc, char** argv)
         }
     }
 
+    if (!globalOptions.graphVerification.verifiers.empty())
+    {
+        if (globalOptions.onlyParse)
+        {
+            fprintf(stderr, "Error: Graph verification requires compilation; --only-parse is incompatible.\n");
+            return 1;
+        }
+    }
+
     if (bytecodeSummary && (recordStats != RecordStats::Function))
     {
         fprintf(stderr, "'Error: Required '--record-stats=function' for '--bytecode-summary'.\n");
@@ -649,7 +702,7 @@ int main(int argc, char** argv)
     const std::vector<std::string> files = getSourceFiles(argc, argv);
 
 #ifdef _WIN32
-    if (compileFormat == CompileFormat::Binary)
+    if (compileFormat == CompileFormat::Binary && globalOptions.graphVerification.verifiers.empty())
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
@@ -673,7 +726,7 @@ int main(int argc, char** argv)
             fileStats.push_back(fileStat);
     }
 
-    if (compileFormat == CompileFormat::Null)
+    if (compileFormat == CompileFormat::Null && globalOptions.graphVerification.verifiers.empty())
     {
         printf(
             "Compiled %d KLOC into %d KB bytecode (read %.2fs, parse %.2fs, compile %.2fs)\n",
@@ -684,7 +737,7 @@ int main(int argc, char** argv)
             stats.compileTime
         );
     }
-    else if (compileFormat == CompileFormat::CodegenNull)
+    else if (compileFormat == CompileFormat::CodegenNull && globalOptions.graphVerification.verifiers.empty())
     {
         printf(
             "Compiled %d KLOC into %d KB bytecode => %d KB native code (%.2fx) (read %.2fs, parse %.2fs, compile %.2fs, codegen %.2fs)\n",

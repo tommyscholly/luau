@@ -1,0 +1,12 @@
+file: ./bytecode-graph/calls/fixed-calls.luau
+function 0:
+  roundtrip: pass
+  use-consistency: pass
+function 1:
+  roundtrip: pass
+  use-consistency: pass
+summary:
+  functions: 2
+  pass: 4
+  decline: 0
+  fail: 0

@@ -82,6 +82,8 @@ def resolve_executables(
     source_root: Path,
     cwd: Path,
     environ: Mapping[str, str],
+    compile_override: str | None = None,
+    require_compile: bool = False,
 ) -> Executables:
     luau = _resolve_override(luau_override or environ.get("LUAU"), "luau", cwd)
     analyze = _resolve_override(analyze_override or environ.get("LUAU_ANALYZE"), "luau-analyze", cwd)
@@ -174,4 +176,21 @@ def resolve_executables(
 
         raise GoldenError(message)
 
-    return Executables(luau=luau, analyze=analyze)
+    compile = _resolve_override(compile_override or environ.get("LUAU_COMPILE"), "luau-compile", cwd)
+    if compile is None:
+        for directory in dict.fromkeys((luau.parent, analyze.parent, cwd, source_root)):
+            compile = _find_named(directory, "luau-compile")
+            if compile is not None:
+                break
+    if compile is None:
+        matches = list(dict.fromkeys(candidate for directory in _common_build_directories(source_root, cwd)
+                                    if (candidate := _find_named(directory, "luau-compile"))))
+        if len(matches) > 1 and require_compile:
+            raise GoldenError("ambiguous luau-compile build discovery; pass --luau-compile")
+        if len(matches) == 1:
+            compile = matches[0]
+    if compile is None:
+        found = shutil.which("luau-compile") or shutil.which("luau-compile.exe")
+        if found:
+            compile = Path(found).resolve()
+    return Executables(luau=luau, analyze=analyze, compile=compile)

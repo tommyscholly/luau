@@ -47,6 +47,7 @@ target_sources(Luau.Bytecode PRIVATE
     Bytecode/include/Luau/BytecodeBuilder.h
     Bytecode/include/Luau/BytecodeCallInliner.h
     Bytecode/include/Luau/BytecodeDump.h
+    Bytecode/include/Luau/BytecodeGraphVerification.h
     Bytecode/include/Luau/BytecodeGraph.h
     Bytecode/include/Luau/BytecodeOps.h
     Bytecode/include/Luau/BytecodeValidation.h
@@ -54,6 +55,7 @@ target_sources(Luau.Bytecode PRIVATE
 
     Bytecode/src/BytecodeBuilder.cpp
     Bytecode/src/BytecodeDump.cpp
+    Bytecode/src/BytecodeGraphVerification.cpp
     Bytecode/src/BytecodeGraph.cpp
     Bytecode/src/BytecodeGraphParser.h
     Bytecode/src/BytecodeGraphSerializer.h
@@ -504,6 +506,7 @@ if(TARGET Luau.UnitTest)
         tests/Autocomplete.test.cpp
         tests/BuiltinDefinitions.test.cpp
         tests/BytecodeCallInliner.test.cpp
+        tests/BytecodeGraphVerification.test.cpp
         tests/BytecodeCompiler.test.cpp
         tests/ExternTypeFixture.cpp
         tests/ExternTypeFixture.h

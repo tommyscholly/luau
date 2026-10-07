@@ -1,0 +1,9 @@
+file: ./bytecode-graph/control-flow/loops.luau
+function 0:
+  roundtrip: pass
+  use-consistency: pass
+summary:
+  functions: 1
+  pass: 2
+  decline: 0
+  fail: 0

@@ -45,6 +45,7 @@ class ParsedArguments(argparse.Namespace):
         self.test_ids: list[str] = []
         self.luau: str | None = None
         self.luau_analyze: str | None = None
+        self.luau_compile: str | None = None
         self.fflags: list[str] = []
         self.update: list[str] = []
         self.update_all: list[str] = []
@@ -147,6 +148,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="test or directory ID, or a Luau source file or directory path",
     )
     _ = parser.add_argument("--luau", metavar="PATH", help="path to the luau executable")
+    _ = parser.add_argument("--luau-compile", metavar="PATH", help="path to the luau-compile executable")
     _ = parser.add_argument("--luau-analyze", metavar="PATH", help="path to the luau-analyze executable")
     _ = parser.add_argument(
         "--fflags",
@@ -287,19 +289,26 @@ def main(
         all_tests = load_and_validate_tests(test_index, update)
         selected_test_ids = {entry.test_id for entry in selected_entries}
         tests = [test for test in all_tests if test.test_id in selected_test_ids]
+        require_compile = any("bytecode-graph" in test.commands_for(config) for test in tests for config in configs)
         executables = resolve_executables(
             args.luau,
             args.luau_analyze,
             actual_source_root,
             actual_cwd,
             actual_environ,
+            args.luau_compile,
+            require_compile,
         )
+        if executables.compile is None and require_compile:
+            raise GoldenError("could not resolve luau-compile; pass --luau-compile or set LUAU_COMPILE")
     except GoldenError as exc:
         print(f"golden: error: {exc}", file=sys.stderr)
         return 2
 
     print(f"luau: {executables.luau}")
     print(f"luau-analyze: {executables.analyze}")
+    if executables.compile is not None:
+        print(f"luau-compile: {executables.compile}")
 
     return run_suite(
         tests,

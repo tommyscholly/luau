@@ -11,7 +11,7 @@ import tempfile
 from contextlib import suppress
 from pathlib import Path
 
-from .models import COMMANDS, ConfigResult, GoldenTest, UpdateMode
+from .models import ConfigResult, GoldenTest, UpdateMode
 
 
 def _captured_output(command: str, text: str) -> str:
@@ -68,21 +68,25 @@ def validate_configuration(
 
     expected_status = test.directives.status_for(config)
     if expected_status is not None:
-        returncodes = {command: result.commands[command].returncode for command in COMMANDS}
+        returncodes = {command: result.commands[command].returncode for command in result.commands
+                       if test.directives.command_status_for(config, command) is None}
         status_matches = (
             all(code == 0 for code in returncodes.values())
             if expected_status == "ok"
             else any(code == 1 for code in returncodes.values())
         )
-        if not status_matches:
-            captured = "\n".join(_captured_output(command, result.commands[command].output) for command in COMMANDS)
+        if returncodes and not status_matches:
+            captured = "\n".join(_captured_output(command, result.commands[command].output) for command in result.commands)
             message = f"{test.test_id} [{config}] expected status {expected_status}, "
-            actual_statuses = " ".join(f"{command}={returncodes[command]}" for command in COMMANDS)
+            actual_statuses = " ".join(f"{command}={code}" for command, code in returncodes.items())
             message += f"got {actual_statuses}\n{captured}"
             errors.append(message)
 
-    for command in COMMANDS:
+    for command in result.commands:
         command_result = result.commands[command]
+        status = test.directives.command_status_for(config, command)
+        if status is not None and command_result.returncode != (0 if status == "ok" else 1):
+            errors.append(f"{test.test_id} [{config}] expected {command}.status {status}, got {command_result.returncode}")
         actual = command_result.output
         patterns = test.directives.patterns_for(config, command)
         for expectation in patterns:
@@ -140,7 +144,7 @@ def write_actual_outputs(
     """
     errors: list[str] = []
     written = 0
-    for command in COMMANDS:
+    for command in result.commands:
         command_result = result.commands[command]
         if command_result.harness_error is not None:
             continue
@@ -187,7 +191,7 @@ def update_configuration(
 
     errors: list[str] = []
     written = 0
-    for command in COMMANDS:
+    for command in result.commands:
         if not _will_update(test, config, command, update):
             continue
 

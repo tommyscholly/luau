@@ -12,6 +12,7 @@
 #include "Luau/ModuleResolver.h"
 #include "Luau/TypeInfer.h"
 #include "Luau/BytecodeBuilder.h"
+#include "Luau/BytecodeGraphVerification.h"
 #include "Luau/Frontend.h"
 #include "Luau/Compiler.h"
 #include "Luau/CodeGen.h"
@@ -270,19 +271,24 @@ void validateBytecodeGraph(const std::string& source, const lua_CompileOptions& 
     Luau::BytecodeBuilder bcb;
     Luau::compileOrThrow(bcb, parseResult, names, compileOptions);
 
-    std::vector<std::string_view> strings = bcb.getStringTable();
-    Luau::BytecodeBuilder reserialized;
-
-    for (uint32_t fid = 0; fid < bcb.getFunctionCount(); fid++)
-    {
-        if (auto optGraph = Luau::Bytecode::fromFunctionBytecode(bcb.getFunctionData(fid), strings))
+    auto results = Luau::Bytecode::verifyBytecodeGraphs(bcb, {{Luau::Bytecode::BytecodeGraphVerifierKind::Roundtrip}, true});
+    for (const auto& function : results)
+        for (const auto& [kind, result] : function.results)
         {
-            std::string functionBytecode = Luau::Bytecode::toFunctionBytecode(reserialized, *optGraph);
-            REQUIRE_MESSAGE(!functionBytecode.empty(), "Failed to serialize function ", fid);
-
-            reserialized.clearStrings();
+            // Preserve conformance's existing skip for graphs beyond the parser's CFG limit.
+            // The verification CLI reports these as failures.
+            if (result.reason == "parse-failed")
+                continue;
+            REQUIRE_MESSAGE(
+                result.status == Luau::Bytecode::BytecodeGraphVerificationStatus::Pass,
+                "Failed bytecode graph verification for function ",
+                function.functionId,
+                ": ",
+                result.reason,
+                " ",
+                result.detail
+            );
         }
-    }
 }
 
 using StateRef = std::unique_ptr<lua_State, void (*)(lua_State*)>;

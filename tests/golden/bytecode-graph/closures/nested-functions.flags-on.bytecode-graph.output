@@ -1,0 +1,18 @@
+file: ./bytecode-graph/closures/nested-functions.luau
+function 0:
+  roundtrip: pass
+  use-consistency: pass
+function 1:
+  roundtrip: pass
+  use-consistency: pass
+function 2:
+  roundtrip: pass
+  use-consistency: pass
+function 3:
+  roundtrip: pass
+  use-consistency: pass
+summary:
+  functions: 4
+  pass: 8
+  decline: 0
+  fail: 0

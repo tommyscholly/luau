@@ -1,0 +1,15 @@
+file: ./bytecode-graph/closures/value-capture.luau
+function 0:
+  roundtrip: pass
+  use-consistency: pass
+function 1:
+  roundtrip: pass
+  use-consistency: pass
+function 2:
+  roundtrip: pass
+  use-consistency: pass
+summary:
+  functions: 3
+  pass: 6
+  decline: 0
+  fail: 0

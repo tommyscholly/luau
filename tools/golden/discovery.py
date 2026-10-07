@@ -232,7 +232,9 @@ def load_and_validate_tests(index: GoldenTestIndex, update: UpdateMode | None = 
                 )
             )
 
-            if test.directives.status_for(config) is None and not has_exact_output and not will_create_exact_output:
+            if (test.directives.status_for(config) is None
+                    and not any(test.directives.command_status_for(config, command) is not None for command in COMMANDS)
+                    and not has_exact_output and not will_create_exact_output):
                 raise GoldenError(
                     f"{test.entry_path}: no status resolves for configuration {config} "
                     + "and no exact-output file is present"

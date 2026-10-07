@@ -342,17 +342,33 @@ if(LUAU_BUILD_CLI AND LUAU_BUILD_TESTS)
         set(LUAU_PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
     endif()
     add_custom_target(Luau.GoldenTest
+        COMMAND ${LUAU_PYTHON_EXECUTABLE} -m tools.bytecode_graph_selftest
+            --luau-compile "$<TARGET_FILE:Luau.Compile.CLI>"
         COMMAND ${LUAU_PYTHON_EXECUTABLE} -m tools.golden.selftest
             --luau "$<TARGET_FILE:Luau.Repl.CLI>"
             --luau-analyze "$<TARGET_FILE:Luau.Analyze.CLI>"
         COMMAND ${LUAU_PYTHON_EXECUTABLE} -m tools.golden
+            --luau-compile "$<TARGET_FILE:Luau.Compile.CLI>"
             --luau "$<TARGET_FILE:Luau.Repl.CLI>"
             --luau-analyze "$<TARGET_FILE:Luau.Analyze.CLI>"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         USES_TERMINAL
         VERBATIM
     )
-    add_dependencies(Luau.GoldenTest Luau.Repl.CLI Luau.Analyze.CLI)
+    add_dependencies(Luau.GoldenTest Luau.Repl.CLI Luau.Analyze.CLI Luau.Compile.CLI)
+    # The benchmark sweep is intentionally separate from normal golden execution.
+    add_custom_target(Luau.BytecodeGraphCorpus
+        COMMAND ${LUAU_PYTHON_EXECUTABLE} tools/bytecode_graph_corpus.py
+            --luau-compile "$<TARGET_FILE:Luau.Compile.CLI>"
+            --verify-bytecode-graph=roundtrip --verify-bytecode-graph=use-consistency
+            --compiler-arg=--fflags=DebugLuauUserDefinedClasses=true
+            --roots bench/tests bench/micro_tests
+            --report "${CMAKE_CURRENT_BINARY_DIR}/bytecode-graph-corpus.json"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        USES_TERMINAL
+        VERBATIM
+    )
+    add_dependencies(Luau.BytecodeGraphCorpus Luau.Compile.CLI)
 endif()
 
 if(LUAU_BUILD_WEB)

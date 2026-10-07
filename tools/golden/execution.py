@@ -7,7 +7,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from .models import COMMANDS, CONFIGURATIONS, CommandResult, ConfigResult, Executables, GoldenTest
+from .models import COMMANDS, CONFIGURATIONS, CommandResult, ConfigResult, Executables, GoldenTest, GoldenError
 from .text import normalize_newlines
 
 
@@ -58,13 +58,18 @@ def execute_configuration(
     executable_paths = {
         "luau": executables.luau,
         "luau-analyze": executables.analyze,
+        "luau-compile": executables.compile,
     }
     configuration = CONFIGURATIONS[config]
     results: dict[str, CommandResult] = {}
 
-    for command, command_spec in COMMANDS.items():
+    for command in test.commands_for(config):
+        command_spec = COMMANDS[command]
+        if executable_paths[command_spec.executable] is None:
+            raise GoldenError(f"{command} requires luau-compile; pass --luau-compile")
         argv = [str(executable_paths[command_spec.executable])]
         argv.extend(command_spec.arguments)
+        argv.extend(test.directives.command_args.get(command, ()))
         argv.append(f"--fflags={configuration.fflags}")
         argv.extend(f"--fflags={value}" for value in fflags)
         if test.directives.fflags is not None:

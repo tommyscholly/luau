@@ -19,7 +19,7 @@ class Configuration:
 @dataclass(frozen=True)
 class Command:
     description: str
-    executable: Literal["luau", "luau-analyze"]
+    executable: Literal["luau", "luau-analyze", "luau-compile"]
     arguments: tuple[str, ...]
 
 
@@ -43,6 +43,11 @@ COMMANDS: Mapping[str, Command] = {
         description="analyze in nonstrict mode with the new solver",
         executable="luau-analyze",
         arguments=("--mode=nonstrict", "--solver=new", "--fflags=DebugLuauMagicTypes"),
+    ),
+    "bytecode-graph": Command(
+        description="compile and verify bytecode graphs",
+        executable="luau-compile",
+        arguments=(),
     ),
     "runtime": Command(
         description="execute with the Luau interpreter",
@@ -69,9 +74,14 @@ class DirectiveSpec:
     config_status: dict[str, str] = field(default_factory=dict)
     regexes: dict[tuple[str | None, str], list[RegexExpectation]] = field(default_factory=dict)
     fflags: str | None = None
+    command_args: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    command_status: dict[tuple[str | None, str], str] = field(default_factory=dict)
 
     def status_for(self, config: str) -> str | None:
         return self.config_status.get(config, self.global_status)
+
+    def command_status_for(self, config: str, command: str) -> str | None:
+        return self.command_status.get((config, command), self.command_status.get((None, command)))
 
     def patterns_for(self, config: str, command: str) -> list[RegexExpectation]:
         return self.regexes.get((None, command), []) + self.regexes.get((config, command), [])
@@ -84,6 +94,14 @@ class GoldenTest:
     entry_argument: str
     directives: DirectiveSpec
     exact: dict[tuple[str, str], tuple[Path, str]] = field(default_factory=dict)
+
+    def commands_for(self, config: str) -> list[str]:
+        # Structural compilation is opt-in; existing tests retain their original matrix.
+        return [command for command in COMMANDS if command != "bytecode-graph"
+                or command in self.directives.command_args
+                or self.directives.command_status_for(config, command) is not None
+                or self.directives.patterns_for(config, command)
+                or (config, command) in self.exact]
 
     def exact_path(self, config: str, command: str) -> Path:
         return self.entry_path.with_name(f"{self.entry_path.stem}.{config}.{command}.output")
@@ -118,6 +136,7 @@ class ConfigResult:
 class Executables:
     luau: Path
     analyze: Path
+    compile: Path | None = None
 
 
 @dataclass(frozen=True)

@@ -206,9 +206,10 @@ aliases: $(EXECUTABLE_ALIASES)
 test: $(TESTS_TARGET) $(TEST_LINK_VM_TARGET) $(TEST_LINK_CODEGEN_TARGET) golden
 	$(TESTS_TARGET) $(TESTS_ARGS)
 
-golden: luau luau-analyze
+golden: luau luau-analyze luau-compile
+	python3 -m tools.bytecode_graph_selftest --luau-compile $(abspath luau-compile)
 	python3 -m tools.golden.selftest --luau $(abspath luau) --luau-analyze $(abspath luau-analyze)
-	python3 -m tools.golden --luau $(abspath luau) --luau-analyze $(abspath luau-analyze)
+	python3 -m tools.golden --luau $(abspath luau) --luau-analyze $(abspath luau-analyze) --luau-compile $(abspath luau-compile)
 
 conformance: $(TESTS_TARGET)
 	$(TESTS_TARGET) $(TESTS_ARGS) -ts=Conformance

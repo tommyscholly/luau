@@ -433,6 +433,53 @@ class DiscoveryTests(unittest.TestCase):
                 _ = load_and_validate_tests(discover_test_index(root))
 
 
+class GraphDirectiveTests(unittest.TestCase):
+    def test_arguments_preserve_quotes_and_commas(self) -> None:
+        spec = parse_directives([(1, 'bytecode-graph.args: --verify-bytecode-graph=roundtrip --fflags=A=true,B=false "two words"'),
+                                 (2, 'bytecode-graph.status: ok'),
+                                 (3, 'flags-off.bytecode-graph.status: fail')], Path("case.luau"))
+        self.assertEqual(("--verify-bytecode-graph=roundtrip", "--fflags=A=true,B=false", "two words"),
+                         spec.command_args["bytecode-graph"])
+        self.assertEqual("ok", spec.command_status_for("flags-on", "bytecode-graph"))
+        self.assertEqual("fail", spec.command_status_for("flags-off", "bytecode-graph"))
+        for text in ('missing.args: --flag', 'bytecode-graph.args: "unclosed', 'bytecode-graph.status: unknown'):
+            with self.subTest(text=text), self.assertRaises(GoldenError):
+                parse_directives([(1, text)], Path("case.luau"))
+        with self.assertRaisesRegex(GoldenError, "duplicate arguments"):
+            parse_directives([(1, "runtime.args: --one"), (2, "runtime.args: --two")], Path("case.luau"))
+
+    def test_arguments_only_reach_selected_command(self) -> None:
+        spec = parse_directives([(1, "bytecode-graph.args: --verify-bytecode-graph=summary")], Path("case.luau"))
+        test = GoldenTest("case", Path("case.luau"), "case.luau", spec)
+        with mock.patch.object(execution, "run_command", return_value=CommandResult(["tool"], 0)) as run:
+            result = execute_configuration(test, "flags-on", Executables(Path("luau"), Path("analyze"), Path("compile")), Path.cwd(), 3)
+        self.assertEqual(4, len(result.commands))
+        for call in run.call_args_list:
+            argv = call.args[0]
+            self.assertEqual("--verify-bytecode-graph=summary" in argv, argv[0] == "compile")
+        with mock.patch.object(execution, "run_command", return_value=CommandResult(["tool"], 0)):
+            with self.assertRaisesRegex(GoldenError, "requires luau-compile"):
+                execute_configuration(test, "flags-on", Executables(Path("luau"), Path("analyze")), Path.cwd(), 3)
+
+    def test_command_status_overrides_global_status(self) -> None:
+        spec = parse_directives([(1, "status: ok"), (2, "runtime.status: fail")], Path("case.luau"))
+        test = GoldenTest("case", Path("case.luau"), "case.luau", spec)
+        self.assertEqual([], validate_configuration(test, "flags-on", _result(runtime_code=1), None))
+        self.assertTrue(validate_configuration(test, "flags-on", _result(), None))
+
+    def test_compiler_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            luau = _make_executable(root / "luau")
+            _make_executable(root / "luau-analyze")
+            compiler = _make_executable(root / "luau-compile")
+            resolved = resolve_executables(str(luau), None, root, root, {})
+            self.assertEqual(compiler.resolve(), resolved.compile)
+            override = _make_executable(root / "other" / "compiler")
+            resolved = resolve_executables(str(luau), None, root, root, {}, str(override))
+            self.assertEqual(override.resolve(), resolved.compile)
+
+
 class ExecutableResolutionTests(unittest.TestCase):
     def test_explicit_executable_finds_colocated_counterpart(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -778,6 +825,7 @@ class MainTests(unittest.TestCase):
 commands:
   strict: analyze in strict mode with the new solver
   nonstrict: analyze in nonstrict mode with the new solver
+  bytecode-graph: compile and verify bytecode graphs
   runtime: execute with the Luau interpreter
 """,
             help_text,
